@@ -59,7 +59,8 @@ PROBLEM = mo.IMGAMOProblem(OBJ_NUMS, VAR_NUMS, OBJ_FUNCS, OBJ_ARGS, BOUNDS)
 
 solver = mo.IMGAMOAlgorithm(PROBLEM, OPTIONS)
 
+
+import datetime
 if __name__ == '__main__':
     res = solver.run_algorithm()
     res.plot_2d(0, 1)
-    print('ss')

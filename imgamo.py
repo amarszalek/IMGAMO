@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import random
 import math
+import time
 
 __author__ = "amarszalek"
 
@@ -82,6 +83,7 @@ class IMGAMOResult(object):
         self.evaluated_front = []
         self.front_size = len(self.front)
         self.evaluation_count = -1
+        self.elapsed_time = 0
 
     def add_to_result(self, not_dominated, not_dominated_eval, distance, level):
         if self.front_size == 0:
@@ -229,15 +231,18 @@ class IMGAMOPlayer(object):
 
 class IMGAMOAlgorithm(object):
     def __init__(self, problem, options):
+        st = time.process_time()
         random.seed()
         self.options = options
         self.problem = problem
         self.patterns = assigning_gens(self.problem.variables_num, self.problem.objectives_num)
         self.players = [IMGAMOPlayer(i, problem, options, self.patterns[i]) for i in range(self.problem.objectives_num)]
         self.result = IMGAMOResult()
+        self.result.elapsed_time += time.process_time() - st
 
     def run_algorithm(self):
         # Main loop
+        st = time.process_time()
         iteration = 0
         exchange_flag = False
         while iteration < self.options.max_iterations:
@@ -294,6 +299,9 @@ class IMGAMOAlgorithm(object):
 
             # incrementation
             iteration += 1
+        self.result.elapsed_time += time.process_time() - st
+        if self.options.verbose:
+            print('Elapsed time:', self.result.elapsed_time)
         return self.result
 
 

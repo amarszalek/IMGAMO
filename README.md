@@ -1,2 +1,2 @@
 # IMGAMO
-IMmune GAme theory MultiObjective algorithm proposed by Paweł Jarosz, PhD. 
+Python implementation of IMmune GAme theory MultiObjective algorithm proposed by Paweł Jarosz, PhD. 

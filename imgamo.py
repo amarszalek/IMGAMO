@@ -16,8 +16,10 @@ class IMGAMOOptions(object):
         self.max_evaluations = kwargs['max_evaluations'] if 'max_evaluations' in kwargs else -1
         self.max_iterations = kwargs['max_iterations'] if 'max_iterations' in kwargs else 1000
         self.exchange_iter = kwargs['exchange_iter'] if 'exchange_iter' in kwargs else 3
+        self.change_iter = kwargs['change_iter'] if 'change_iter' in kwargs else 3
         self.clone_number = kwargs['clone_number'] if 'clone_number' in kwargs else 15
-        self.distance_level = kwargs['distance_level'] if 'distance_level' in kwargs else 0.01
+        self.distance_level_f = kwargs['distance_level_f'] if 'distance_level_f' in kwargs else 0.05
+        self.distance_level_x = kwargs['distance_level_x'] if 'distance_level_x' in kwargs else 0.01
         self.mutate = kwargs['mutate'] if 'mutate' in kwargs else uniform_mutate
         self.individual_init = kwargs['individual_init'] if 'individual_init' in kwargs else create_individual
         self.distance = kwargs['distance'] if 'distance' in kwargs else euclidean_distance
@@ -40,7 +42,7 @@ class IMGAMOProblem(object):
         self.evaluation_count[func_no] += pop.shape[0]
         return np.array([self.objectives_funcs[func_no](ind, *self.objectives_args[func_no]) for ind in pop])
 
-    def get_not_dominated(self, pop, eval_pop=None, func_no=-1):
+    def get_not_dominated(self, pop, distance, level, eval_pop=None, func_no=-1):
         eval_pop_full = np.zeros((pop.shape[0], self.objectives_num))
         for i in range(self.objectives_num):
             if i == func_no and eval_pop is not None:
@@ -50,7 +52,7 @@ class IMGAMOProblem(object):
         to_remove = []
         for i in range(eval_pop_full.shape[0]):
             for j in range(eval_pop_full.shape[0]):
-                if i != j and (eval_pop_full[i] >= eval_pop_full[j]).all():
+                if j not in to_remove and i != j and (eval_pop_full[i] >= eval_pop_full[j]).all():
                     to_remove.append(i)
                     break
         not_dominated = []
@@ -59,7 +61,19 @@ class IMGAMOProblem(object):
             if i not in to_remove:
                 not_dominated.append(pop[i])
                 not_dominated_eval.append(eval_pop_full[i])
-        return np.array(not_dominated), np.array(not_dominated_eval)
+        to_remove = []
+        for i in range(len(not_dominated_eval)):
+            for j in range(len(not_dominated_eval)):
+                if j not in to_remove and i != j and distance(not_dominated_eval[i], not_dominated_eval[j]) < level:
+                    to_remove.append(i)
+                    break
+        not_dominated_s = []
+        not_dominated_eval_s = []
+        for i in range(len(not_dominated_eval)):
+            if i not in to_remove:
+                not_dominated_s.append(not_dominated[i])
+                not_dominated_eval_s.append(not_dominated_eval[i])
+        return np.array(not_dominated_s), np.array(not_dominated_eval_s)
 
 
 class IMGAMOResult(object):
@@ -69,7 +83,7 @@ class IMGAMOResult(object):
         self.front_size = len(self.front)
         self.evaluation_count = -1
 
-    def add_to_result(self, not_dominated, not_dominated_eval):
+    def add_to_result(self, not_dominated, not_dominated_eval, distance, level):
         if self.front_size == 0:
             self.front = copy.deepcopy(not_dominated)
             self.evaluated_front = copy.deepcopy(not_dominated_eval)
@@ -101,8 +115,20 @@ class IMGAMOResult(object):
                 if i not in to_remove:
                     new_front.append(self.front[i])
                     new_front_eval.append(self.evaluated_front[i])
-            self.front = np.array(new_front + temp_ndom.tolist())
-            self.evaluated_front = np.array(new_front_eval + temp_ndom_eval.tolist())
+            new_front_s = copy.deepcopy(new_front)
+            new_front_eval_s = copy.deepcopy((new_front_eval))
+            for i in range(len(temp_ndom_eval)):
+                flag = True
+                for j in range(len(new_front_eval)):
+                    dist = distance(temp_ndom_eval[i], new_front_eval[j])
+                    if dist < level:
+                        flag = False
+                        break
+                if flag:
+                    new_front_s.append(temp_ndom[i])
+                    new_front_eval_s.append(temp_ndom_eval[i])
+            self.front = np.array(new_front_s)
+            self.evaluated_front = np.array(new_front_eval_s)
             self.front_size = len(self.front)
 
     def plot_2d(self, func_no1, func_no2, show=True):
@@ -164,7 +190,7 @@ class IMGAMOPlayer(object):
         for k, row in enumerate(dist_mat):
             if k in computed:
                 continue
-            similar = [j for j in range(len(row)) if row[j] < self.options.distance_level]
+            similar = [j for j in range(len(row)) if row[j] < self.options.distance_level_x]
             if len(similar) == 1:
                 continue
             computed += similar
@@ -215,41 +241,43 @@ class IMGAMOAlgorithm(object):
         iteration = 0
         exchange_flag = False
         while iteration < self.options.max_iterations:
-            best_inds = []
             # exchange condition
             if iteration % self.options.exchange_iter == 0 and iteration < self.options.max_iterations - 1:
-                #best_inds = []
+                best_inds = []
                 exchange_flag = True
 
             # for each player
             for player in self.players:
                 # clonal selection
                 self.problem.evaluation_count[player.player_id] += player.clonal_selection()
-                # suppression
-                self.problem.evaluation_count[player.player_id] += player.suppression()
                 # get not dominated
                 not_dominated, not_dominated_eval = \
-                    self.problem.get_not_dominated(player.population, eval_pop=player.evaluated_population,
+                    self.problem.get_not_dominated(player.population, self.options.distance,
+                                                   self.options.distance_level_f, eval_pop=player.evaluated_population,
                                                    func_no=player.player_id)
                 # add to result
-                self.result.add_to_result(not_dominated, not_dominated_eval)
+                self.result.add_to_result(not_dominated, not_dominated_eval, self.options.distance,
+                                          self.options.distance_level_f)
+
+                # suppression
+                self.problem.evaluation_count[player.player_id] += player.suppression()
+
                 # get best individual
-                best_inds.append(player.get_best())
-                #if exchange_flag:
-                    #best_inds.append(player.get_best())
+                if exchange_flag:
+                    best_inds.append(player.get_best())
 
             # exchange gens
-            for player in self.players:
-                player.update_gens(best_inds, self.patterns)
+            if exchange_flag:
+                for player in self.players:
+                    player.update_gens(best_inds, self.patterns)
+                exchange_flag = False
 
             # change patterns
-            if exchange_flag:
+            if iteration % self.options.change_iter == 0 and iteration < self.options.max_iterations - 1:
                 new_patterns = assigning_gens(self.problem.variables_num, self.problem.objectives_num)
                 for player in self.players:
-                    #player.update_gens(best_inds, self.patterns)
                     player.set_pattern(new_patterns[player.player_id])
                 self.patterns = new_patterns
-                exchange_flag = False
 
             self.result.evaluation_count = self.problem.evaluation_count
 
@@ -312,27 +340,90 @@ def create_population(n_pop, n_var, bounds, init_func, ndigits):
 
 
 def uniform_mutate(individual, pattern, bounds, ndigits):
-    for i in pattern:
-        r = random.random()
-        if r < 0.8:
-            continue
-        r = random.random()
-        if bounds[i][0] is None and bounds[i][1] is None:
-            r2 = random.random()
-            individual[i] = round(individual[i] + r, ndigits) if r2 > 0 else round(individual[i] - r, ndigits)
-        elif bounds[i][0] is not None and bounds[i][1] is None:
-            a = bounds[i][0]
-            d = a - individual[i] if r < 0.5 else 1.0
-            individual[i] = round(individual[i] + d * r, ndigits)
-        elif bounds[i][0] is None and bounds[i][1] is not None:
-            b = bounds[i][1]
-            d = b - individual[i] if r > 0.5 else -1.0
-            individual[i] = round(individual[i] + d * r, ndigits)
-        else:
-            a = bounds[i][0]
-            b = bounds[i][1]
-            d = a - individual[i] if r < 0.5 else b - individual[i]
-            individual[i] = round(individual[i] + d * r, ndigits)
+    i = np.random.choice(pattern)
+    r = random.random()
+    if bounds[i][0] is None and bounds[i][1] is None:
+        r2 = random.random()
+        individual[i] = round(individual[i] + r, ndigits) if r2 > 0 else round(individual[i] - r, ndigits)
+    elif bounds[i][0] is not None and bounds[i][1] is None:
+        a = bounds[i][0]
+        d = a - individual[i] if r < 0.5 else 1.0
+        individual[i] = round(individual[i] + d * r, ndigits)
+    elif bounds[i][0] is None and bounds[i][1] is not None:
+        b = bounds[i][1]
+        d = b - individual[i] if r > 0.5 else -1.0
+        individual[i] = round(individual[i] + d * r, ndigits)
+    else:
+        a = bounds[i][0]
+        b = bounds[i][1]
+        d = a - individual[i] if r < 0.5 else b - individual[i]
+        individual[i] = round(individual[i] + d * r, ndigits)
+    return individual
+
+
+def uniform_mutate_in(individual, pattern, bounds, ndigits):
+    k = np.random.choice(pattern)
+    individual[k] = random.random()
+    if bounds[k][0] is None and bounds[k][1] is None:
+        individual[k] = math.tan(math.pi * individual[k] - np.math.pi)
+    elif bounds[k][0] is not None and bounds[k][1] is None:
+        a = bounds[k][0]
+        individual[k] = -math.log(individual[k]) + a
+    elif bounds[k][0] is None and bounds[k][1] is not None:
+        b = bounds[k][1]
+        individual[k] = math.log(individual[k]) + b
+    else:
+        a = bounds[k][0]
+        b = bounds[k][1]
+        individual[k] = (b - a) * individual[k] + a
+        individual[k] = np.round(individual[k], ndigits)
+    return individual
+
+
+def bound_mutate(individual, pattern, bounds, ndigits):
+    k = np.random.choice(pattern)
+    if bounds[k][0] is None and bounds[k][1] is None:
+        a = -100.0
+        b = 100.0
+    elif bounds[k][0] is not None and bounds[k][1] is None:
+        a = bounds[k][0]
+        b = a + 100.0
+    elif bounds[k][0] is None and bounds[k][1] is not None:
+        b = bounds[k][1]
+        a = b - 100.0
+    else:
+        a = bounds[k][0]
+        b = bounds[k][1]
+    r = np.random.random()
+    if r < 0.5:
+        r = np.random.random()
+        individual[k] = a + (individual[k] - a) * r
+    else:
+        r = np.random.random()
+        individual[k] = (b - individual[k]) * r + individual[k]
+    individual[k] = np.round(individual[k], ndigits)
+    return individual
+
+
+def gaussian_mutate(individual, pattern, bounds, ndigits):
+    sigma = 0.1
+    k = np.random.choice(pattern)
+    if bounds[k][0] is None and bounds[k][1] is None:
+        a = -100.0
+        b = 100.0
+    elif bounds[k][0] is not None and bounds[k][1] is None:
+        a = bounds[k][0]
+        b = a + 100.0
+    elif bounds[k][0] is None and bounds[k][1] is not None:
+        b = bounds[k][1]
+        a = b - 100.0
+    else:
+        a = bounds[k][0]
+        b = bounds[k][1]
+    ran = sigma * np.random.randn() + individual[k]
+    if a < ran < b:
+        individual[k] = ran
+    individual[k] = np.round(individual[k], ndigits)
     return individual
 
 

@@ -21,14 +21,14 @@ def obj_func2(x):
     return g * (1.0 - (x[0]/g)**2)
 
 
-def hiper_mutate(ind, pattern, bounds, ndigits):
+def hiper_mutate(ind, pattern, bounds):
     r = np.random.random()
     if r < 0.45:
-        ind = mo.uniform_mutate_in(ind, pattern, bounds, ndigits)
+        ind = mo.uniform_mutate_in(ind, pattern, bounds)
     elif r < 0.9:
-        ind = mo.gaussian_mutate(ind, pattern, bounds, ndigits)
+        ind = mo.gaussian_mutate(ind, pattern, bounds)
     else:
-        ind = mo.bound_mutate(ind, pattern, bounds, ndigits)
+        ind = mo.bound_mutate(ind, pattern, bounds)
     return ind
 
 
@@ -44,17 +44,16 @@ distance_level_x: float,               default: 0.01
 mutate:           callable (function), default: uniform_mutate
 individual_init:  callable (function), default: create_individual
 distance:         callable (function), default: euclidean_distance
-ndigits:          int,                 default: 8
 verbose:          bool,                default: True
 """
-OPTIONS = mo.IMGAMOOptions(population_size=50, max_iterations=100, clone_number=25, exchange_iter=1, change_iter=3,
-                           distance_level_f=0.05, distance_level_x=0.01, ndigits=12, mutate=hiper_mutate)
+OPTIONS = mo.IMGAMOOptions(population_size=20, max_iterations=50, clone_number=20, exchange_iter=1, change_iter=1,
+                           distance_level_f=0.05, distance_level_x=0.01, mutate=hiper_mutate, verbose=False)
 
 OBJ_NUMS = 2
 VAR_NUMS = 5
 OBJ_FUNCS = [obj_func1, obj_func2]
 OBJ_ARGS = [(), ()]
-BOUNDS = tuple((0.0, 1.0) for i in range(VAR_NUMS))
+BOUNDS = tuple((0.0, 1.0) for i in range(VAR_NUMS)) + (0.1,)
 PROBLEM = mo.IMGAMOProblem(OBJ_NUMS, VAR_NUMS, OBJ_FUNCS, OBJ_ARGS, BOUNDS)
 
 solver = mo.IMGAMOAlgorithm(PROBLEM, OPTIONS)
@@ -63,4 +62,13 @@ solver = mo.IMGAMOAlgorithm(PROBLEM, OPTIONS)
 import datetime
 if __name__ == '__main__':
     res = solver.run_algorithm()
+    print('Evaluation_count: ', res.evaluation_count)
+    print('Front size: ', res.front_size)
+    print('Elapsed time:', res.elapsed_time)
     res.plot_2d(0, 1)
+    res = solver.run_algorithm()
+    print('Evaluation_count: ', res.evaluation_count)
+    print('Front size: ', res.front_size)
+    print('Elapsed time:', res.elapsed_time)
+    res.plot_2d(0, 1)
+

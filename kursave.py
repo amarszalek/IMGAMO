@@ -15,14 +15,14 @@ def obj_func2(x):
     return (np.abs(x)**0.8 + 5.0*np.sin(x**3)).sum()
 
 
-def hiper_mutate(ind, pattern, bounds, ndigits):
+def hiper_mutate(ind, pattern, bounds):
     r = np.random.random()
     if r < 0.45:
-        ind = mo.uniform_mutate_in(ind, pattern, bounds, ndigits)
+        ind = mo.uniform_mutate_in(ind, pattern, bounds)
     elif r < 0.9:
-        ind = mo.gaussian_mutate(ind, pattern, bounds, ndigits)
+        ind = mo.gaussian_mutate(ind, pattern, bounds)
     else:
-        ind = mo.bound_mutate(ind, pattern, bounds, ndigits)
+        ind = mo.bound_mutate(ind, pattern, bounds)
     return ind
 
 
@@ -38,17 +38,16 @@ distance_level_x: float,               default: 0.01
 mutate:           callable (function), default: uniform_mutate
 individual_init:  callable (function), default: create_individual
 distance:         callable (function), default: euclidean_distance
-ndigits:          int,                 default: 8
 verbose:          bool,                default: True
 """
 OPTIONS = mo.IMGAMOOptions(population_size=25, max_iterations=100, clone_number=25, exchange_iter=1,
-                           distance_level_f=0.05, distance_level_x=0.01, ndigits=12, mutate=hiper_mutate)
+                           distance_level_f=0.05, distance_level_x=0.01, mutate=hiper_mutate)
 
 OBJ_NUMS = 2
 VAR_NUMS = 3
 OBJ_FUNCS = [obj_func1, obj_func2]
 OBJ_ARGS = [(), ()]
-BOUNDS = tuple((-5.0, 5.0) for i in range(VAR_NUMS))
+BOUNDS = tuple((-5.0, 5.0) for i in range(VAR_NUMS)) + (0.1,)
 PROBLEM = mo.IMGAMOProblem(OBJ_NUMS, VAR_NUMS, OBJ_FUNCS, OBJ_ARGS, BOUNDS)
 
 solver = mo.IMGAMOAlgorithm(PROBLEM, OPTIONS)

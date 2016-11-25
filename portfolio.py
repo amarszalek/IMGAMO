@@ -20,27 +20,32 @@ def obj_var(x, cov):
     return np.dot(x, np.dot(cov,x))
 
 
-def portfolio_init(n_var, bounds, ndigits):
+def portfolio_init(n_var, bounds):
     if bounds == 1:
         ran = np.random.random(n_var)
     else:
         ran = 2.0 * np.random.random(n_var) - 1.0
     ind = ran/np.sum(ran)
-    return np.round(ind, ndigits)
+    return ind
 
 
-def portfolio_mutate(individual, pattern, bounds, ndigits):
+def portfolio_mutate(individual, pattern, bounds):
     #print(pattern)
     sum_pattern = np.sum(individual[pattern])
-    if bounds == 1:
+    #print(sum_pattern)
+    if bounds == -1:
         ran = np.random.random(len(pattern))
     else:
         ran = 2.0 * np.random.random(len(pattern)) - 1.0
     ran = (ran * sum_pattern) / np.sum(ran)
-    #print(ran)
+    #print(ran, ran.sum())
     for i, k in enumerate(pattern):
-        individual[k] = round(ran[i], ndigits)
+        individual[k] = ran[i]
+    #print(individual.sum())
     return individual
+
+def portfolio_repair(ind):
+    return ind/np.sum(ind)
 
 
 """
@@ -55,14 +60,13 @@ distance_level_x: float,               default: 0.01
 mutate:           callable (function), default: uniform_mutate
 individual_init:  callable (function), default: create_individual
 distance:         callable (function), default: euclidean_distance
-ndigits:          int,                 default: 8
 verbose:          bool,                default: True
 """
 
 
-OPTIONS = mo.IMGAMOOptions(population_size=50, max_iterations=100, clone_number=25, exchange_iter=1, change_iter=3,
-                           distance_level_f=0.005, distance_level_x=0.01, ndigits=12, individual_init=portfolio_init,
-                           mutate=portfolio_mutate)
+OPTIONS = mo.IMGAMOOptions(population_size=20, max_iterations=50, clone_number=20, exchange_iter=1, change_iter=3,
+                           distance_level_f=0.005, distance_level_x=0.01, individual_init=portfolio_init,
+                           mutate=portfolio_mutate, exchange_repair=portfolio_repair)
 OBJ_NUMS = 2
 VAR_NUMS = len(MEAN)
 OBJ_FUNCS = [obj_mean, obj_var]

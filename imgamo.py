@@ -22,9 +22,9 @@ class IMGAMOOptions(object):
         self.distance_level_f = kwargs['distance_level_f'] if 'distance_level_f' in kwargs else 0.05
         self.distance_level_x = kwargs['distance_level_x'] if 'distance_level_x' in kwargs else 0.01
         self.mutate = kwargs['mutate'] if 'mutate' in kwargs else uniform_mutate
+        self.exchange_repair = kwargs['exchange_repair'] if 'exchange_repair' in kwargs else None
         self.individual_init = kwargs['individual_init'] if 'individual_init' in kwargs else create_individual
         self.distance = kwargs['distance'] if 'distance' in kwargs else euclidean_distance
-        self.ndigits = kwargs['ndigits'] if 'ndigits' in kwargs else 8
         self.verbose = kwargs['verbose'] if 'verbose' in kwargs else True
 
 
@@ -160,7 +160,7 @@ class IMGAMOPlayer(object):
         self.problem = problem
         self.options = options
         self.population = create_population(options.population_size, problem.variables_num, problem.bounds,
-                                            options.individual_init, options.ndigits)
+                                            options.individual_init)
         self.evaluated_population = problem.evaluate_population(self.population, self.player_id)
         self.pattern = pattern
 
@@ -171,8 +171,7 @@ class IMGAMOPlayer(object):
         clone_num = self.options.clone_number
         for arg in arg_sort:
             temp_pop = np.array([self.options.mutate(copy.deepcopy(self.population[arg]), self.pattern,
-                                                     self.problem.bounds, self.options.ndigits)
-                                 for _ in range(clone_num)])
+                                                     self.problem.bounds) for _ in range(clone_num)])
             temp_eval = np.array([self.problem.objectives_funcs[self.player_id]
                                   (ind, *self.problem.objectives_args[self.player_id]) for ind in temp_pop])
             eval_count += temp_eval.shape[0]
@@ -184,31 +183,25 @@ class IMGAMOPlayer(object):
         return eval_count
 
     def suppression(self):
-        dist_mat = distance_matrix(self.population, self.options.distance)
-        temp_pop = copy.deepcopy(self.population)
-        temp_eval_pop = copy.deepcopy(self.evaluated_population)
+        dist_mat = distance_matrix(self.population, self.pattern, self.options.distance)
         computed = []
         eval_count = 0
         for k, row in enumerate(dist_mat):
             if k in computed:
                 continue
-            similar = [j for j in range(len(row)) if row[j] < self.options.distance_level_x]
+            similar = [j for j in range(len(row)) if row[j] < self.options.distance_level_x and j not in computed]
             if len(similar) == 1:
+                computed += similar
                 continue
-            computed += similar
             eval_similar = [self.evaluated_population[j] for j in similar]
-            arg_best = np.argmin(eval_similar)
-            temp_pop[similar[0]] = self.population[similar[arg_best]]
-            temp_eval_pop[similar[0]] = eval_similar[arg_best]
-            for i in range(1, len(similar)):
-                new_ind = self.options.individual_init(self.problem.variables_num, self.problem.bounds,
-                                                       self.options.ndigits)
-                temp_pop[similar[i]] = new_ind
-                temp_eval_pop[similar[i]] = self.problem.objectives_funcs[self.player_id]\
-                    (new_ind, *self.problem.objectives_args[self.player_id])
-                eval_count += 1
-        self.population = copy.deepcopy(temp_pop)
-        self.evaluated_population = copy.deepcopy(temp_eval_pop)
+            arg_sort = np.argsort(eval_similar)
+            new_ind = self.options.individual_init(self.problem.variables_num, self.problem.bounds)
+            for k in self.pattern:
+                self.population[similar[arg_sort[1]]][k] = new_ind[k]
+            self.evaluated_population[similar[arg_sort[1]]] = self.problem.objectives_funcs[self.player_id]\
+                (self.population[similar[arg_sort[1]]], *self.problem.objectives_args[self.player_id])
+            computed += [similar[arg_sort[1]]]
+            eval_count += 1
         return eval_count
 
     def set_pattern(self, pattern):
@@ -225,6 +218,10 @@ class IMGAMOPlayer(object):
                 continue
             for i in patterns[p]:
                 self.population[:, i] = best_inds[p][i]
+        # for portfolio
+        if self.options.exchange_repair is not None:
+            for ind in self.population:
+                ind = self.options.exchange_repair(ind)
         # reevaluate population
         self.evaluated_population = self.problem.evaluate_population(self.population, self.player_id)
 
@@ -302,6 +299,7 @@ class IMGAMOAlgorithm(object):
         self.result.elapsed_time += time.process_time() - st
         if self.options.verbose:
             print('Elapsed time:', self.result.elapsed_time)
+        print('Elapsed time:', self.result.elapsed_time)
         return self.result
 
 
@@ -321,7 +319,7 @@ def assigning_gens(n_var, n_func):
     return pat
 
 
-def create_individual(n_var, bounds, ndigits):
+def create_individual(n_var, bounds):
     ind = np.random.random(n_var)
     for k in range(n_var):
         if bounds[k][0] is None and bounds[k][1] is None:
@@ -336,40 +334,39 @@ def create_individual(n_var, bounds, ndigits):
             a = bounds[k][0]
             b = bounds[k][1]
             ind[k] = (b - a) * ind[k] + a
-    ind = np.round(ind, ndigits)
     return ind
 
 
-def create_population(n_pop, n_var, bounds, init_func, ndigits):
+def create_population(n_pop, n_var, bounds, init_func):
     pop = np.zeros((n_pop, n_var))
     for i in range(n_pop):
-        pop[i] = init_func(n_var, bounds, ndigits)
+        pop[i] = init_func(n_var, bounds)
     return pop
 
 
-def uniform_mutate(individual, pattern, bounds, ndigits):
+def uniform_mutate(individual, pattern, bounds):
     i = np.random.choice(pattern)
     r = random.random()
     if bounds[i][0] is None and bounds[i][1] is None:
         r2 = random.random()
-        individual[i] = round(individual[i] + r, ndigits) if r2 > 0 else round(individual[i] - r, ndigits)
+        individual[i] = individual[i] + r if r2 > 0 else individual[i] - r
     elif bounds[i][0] is not None and bounds[i][1] is None:
         a = bounds[i][0]
         d = a - individual[i] if r < 0.5 else 1.0
-        individual[i] = round(individual[i] + d * r, ndigits)
+        individual[i] = individual[i] + d * r
     elif bounds[i][0] is None and bounds[i][1] is not None:
         b = bounds[i][1]
         d = b - individual[i] if r > 0.5 else -1.0
-        individual[i] = round(individual[i] + d * r, ndigits)
+        individual[i] = individual[i] + d * r
     else:
         a = bounds[i][0]
         b = bounds[i][1]
         d = a - individual[i] if r < 0.5 else b - individual[i]
-        individual[i] = round(individual[i] + d * r, ndigits)
+        individual[i] = individual[i] + d * r
     return individual
 
 
-def uniform_mutate_in(individual, pattern, bounds, ndigits):
+def uniform_mutate_in(individual, pattern, bounds):
     k = np.random.choice(pattern)
     individual[k] = random.random()
     if bounds[k][0] is None and bounds[k][1] is None:
@@ -384,11 +381,10 @@ def uniform_mutate_in(individual, pattern, bounds, ndigits):
         a = bounds[k][0]
         b = bounds[k][1]
         individual[k] = (b - a) * individual[k] + a
-        individual[k] = np.round(individual[k], ndigits)
     return individual
 
 
-def bound_mutate(individual, pattern, bounds, ndigits):
+def bound_mutate(individual, pattern, bounds):
     k = np.random.choice(pattern)
     if bounds[k][0] is None and bounds[k][1] is None:
         a = -100.0
@@ -409,12 +405,11 @@ def bound_mutate(individual, pattern, bounds, ndigits):
     else:
         r = np.random.random()
         individual[k] = (b - individual[k]) * r + individual[k]
-    individual[k] = np.round(individual[k], ndigits)
     return individual
 
 
-def gaussian_mutate(individual, pattern, bounds, ndigits):
-    sigma = 0.1
+def gaussian_mutate(individual, pattern, bounds):
+    sigma = bounds[len(individual)]
     k = np.random.choice(pattern)
     if bounds[k][0] is None and bounds[k][1] is None:
         a = -100.0
@@ -431,7 +426,6 @@ def gaussian_mutate(individual, pattern, bounds, ndigits):
     ran = sigma * np.random.randn() + individual[k]
     if a < ran < b:
         individual[k] = ran
-    individual[k] = np.round(individual[k], ndigits)
     return individual
 
 
@@ -440,14 +434,16 @@ def euclidean_distance(x, y):
     return np.sqrt(z.sum())
 
 
-def distance_matrix(pop, distance):
+def distance_matrix(pop, pattern, distance):
     n = pop.shape[0]
     dist_mat = np.zeros((n, n))
     for i in range(n):
+        vec1 = pop[i][pattern]
         for j in range(i, n):
+            vec2 = pop[j][pattern]
             if i == j:
                 dist_mat[i, j] = 0.0
             else:
-                dist_mat[i, j] = distance(pop[i], pop[j])
+                dist_mat[i, j] = distance(vec1, vec2)
                 dist_mat[j, i] = dist_mat[i, j]
     return dist_mat
